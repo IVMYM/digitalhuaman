@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小信工作台</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#080b14;color:#e8eefc;font:14px/1.5 system-ui,-apple-system,"PingFang SC",sans-serif}
+    header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 28px 8px}
+    h1{margin:0;font-size:20px;font-weight:650;letter-spacing:.04em}
+    h1 a{color:#80a7ff;text-decoration:none;font-size:13px;margin-left:12px;letter-spacing:0}
+    .meta{color:#8795b5;font-size:12px}
+    .banner{margin:8px 28px 18px;padding:12px 16px;border-radius:12px;background:#10182b;border:1px solid rgba(160,185,255,.16)}
+    .banner.ok{border-color:rgba(74,222,128,.35)}
+    .banner.warn{border-color:rgba(251,191,36,.4)}
+    .banner.down{border-color:rgba(248,113,113,.45)}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:0 28px}
+    .card{background:#10182b;border:1px solid rgba(160,185,255,.14);border-radius:14px;padding:14px 14px 10px;min-width:0}
+    .card h2{margin:0;font-size:15px;display:flex;align-items:center;gap:8px}
+    .card p{margin:8px 0 0;color:#c7d4f5}
+    .dot{width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 8px #4ade80}
+    .warn .dot{background:#fbbf24;box-shadow:0 0 8px #fbbf24}
+    .down .dot{background:#f87171;box-shadow:0 0 8px #f87171}
+    .logs{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px 28px 28px}
+    .log{background:#0c1222;border:1px solid rgba(160,185,255,.12);border-radius:14px;min-width:0}
+    .log h2{margin:0;padding:12px 14px 0;font-size:13px;color:#9eb6ff}
+    pre{margin:0;padding:10px 14px 14px;height:280px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#b7c3de;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+    .err{color:#f87171}
+    @media(max-width:900px){.grid,.logs{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>小信工作台 <a href="/">返回画面</a></h1>
+    <div class="meta" id="meta">正在读取…</div>
+  </header>
+  <div class="banner" id="banner">正在检查链路</div>
+  <section class="grid" id="nodes"></section>
+  <section class="logs" id="logs"></section>
+  <script>
+    const labels={ok:'正常',warn:'注意',down:'中断'};
+    function esc(text){return String(text||'').replace(/[&<>]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]))}
+    function paint(data){
+      const banner=document.querySelector('#banner');
+      banner.className='banner '+data.level;
+      banner.textContent=data.summary;
+      document.querySelector('#meta').textContent='更新于 '+data.checked_at+' · 每 3 秒';
+      document.querySelector('#nodes').innerHTML=data.nodes.map(node=>`
+        <article class="card ${node.level}">
+          <h2><i class="dot"></i>${esc(node.name)} · ${labels[node.level]||node.level}</h2>
+          <p>${esc(node.detail)}</p>
+        </article>`).join('');
+      const logs=data.nodes.filter(node=>['页面','语音','TURN'].includes(node.name));
+      document.querySelector('#logs').innerHTML=logs.map(node=>`
+        <article class="log">
+          <h2>${esc(node.name)} 日志</h2>
+          <pre>${node.log.map(esc).join('\n')}</pre>
+        </article>`).join('');
+      document.querySelectorAll('pre').forEach(pre=>{pre.scrollTop=pre.scrollHeight});
+    }
+    async function load(){
+      try{
+        const response=await fetch('/api/workbench',{cache:'no-store'});
+        if(!response.ok)throw new Error('读取失败');
+        paint(await response.json());
+      }catch(error){
+        document.querySelector('#banner').className='banner down';
+        document.querySelector('#banner').textContent=error.message||'工作台读取失败';
+      }
+    }
+    load();
+    setInterval(load,3000);
+  </script>
+</body>
+</html>

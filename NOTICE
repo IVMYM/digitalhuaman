@@ -1,0 +1,11 @@
+digitalhuaman (LiveTalking-Muse experimental toolkit)
+Copyright 2026 IVMYM / contributors to this repository distribution.
+
+This distribution combines:
+  - Upstream LiveTalking (Copyright livetalking@lipku), licensed under Apache-2.0
+  - Local extensions: fine-digital-human/, dh-admin/, scripts/, Colab/DSW helpers
+
+See LICENSE for Apache-2.0 terms applying to LiveTalking-origin files.
+See THIRD_PARTY_LICENSES.md for vendored components and model restrictions.
+
+This NOTICE file is informational and does not change upstream license terms.

@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>fine-digital-human</title>
+  <style>
+    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#080b14;color:#f5f7ff;font-family:system-ui,-apple-system,"PingFang SC",sans-serif}
+    #app{position:relative;width:100%;height:100%;overflow:hidden;background:#06101f center/cover no-repeat}
+    video,.avatar{position:absolute;left:1.2%;bottom:0;height:82vh;width:auto;max-height:none;max-width:none;z-index:1;pointer-events:none;object-fit:contain}
+    canvas#person{filter:drop-shadow(0 14px 18px rgba(0,0,0,.42))}
+    video.src-only{left:0;bottom:0;width:2px;height:2px;opacity:0}
+    canvas#person{display:none}
+    .brand{position:absolute;top:28px;left:34px;z-index:2;letter-spacing:.12em;font-size:14px;color:#dce6ff;opacity:.8}.brand span{color:#80a7ff}.brand a{margin-left:14px;color:#80a7ff;letter-spacing:0;text-decoration:none}
+    .status{position:absolute;bottom:30px;left:50%;z-index:2;transform:translateX(-50%);padding:10px 18px;border:1px solid rgba(160,185,255,.24);border-radius:999px;background:rgba(10,16,34,.64);backdrop-filter:blur(12px);font-size:14px;color:#c7d4f5;white-space:nowrap}
+    .status:before{content:"";display:inline-block;width:7px;height:7px;margin-right:9px;border-radius:50%;background:#7e9cff;box-shadow:0 0 12px #7e9cff}
+    .hint{position:absolute;bottom:72px;left:50%;z-index:2;transform:translateX(-50%);font-size:12px;color:#8795b5;opacity:.75}
+
+    .chat{position:absolute;top:22px;right:22px;z-index:5;display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+    .chat-toggle{width:46px;height:46px;border:1px solid rgba(160,185,255,.28);border-radius:50%;background:rgba(12,18,36,.78);backdrop-filter:blur(14px);color:#dce6ff;cursor:pointer;display:grid;place-items:center;transition:transform .2s,box-shadow .2s,border-color .2s}
+    .chat-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .chat-toggle:hover,.chat:hover .chat-toggle,.chat:focus-within .chat-toggle{transform:scale(1.04);border-color:rgba(128,167,255,.55);box-shadow:0 8px 28px rgba(0,0,0,.35)}
+    .chat-panel{width:min(360px,calc(100vw - 44px));max-height:0;opacity:0;overflow:hidden;pointer-events:none;transform:translateY(-6px);transition:max-height .28s ease,opacity .2s ease,transform .2s ease;border-radius:16px;border:1px solid rgba(160,185,255,.18);background:rgba(10,16,34,.88);backdrop-filter:blur(18px);box-shadow:0 16px 48px rgba(0,0,0,.4)}
+    .chat:hover .chat-panel,.chat:focus-within .chat-panel{max-height:420px;opacity:1;pointer-events:auto;transform:translateY(0)}
+    .chat-log{height:220px;overflow:auto;padding:14px 14px 8px;font-size:13px;line-height:1.55;color:#c7d4f5;scrollbar-width:thin}
+    .chat-log .u{color:#9eb6ff;margin:0 0 8px}.chat-log .a{color:#e8eefc;margin:0 0 12px;white-space:pre-wrap}
+    .chat-log .empty{color:#8795b5;opacity:.8;margin-top:72px;text-align:center}
+    .chat-input-row{display:flex;gap:8px;padding:10px 12px 12px;border-top:1px solid rgba(160,185,255,.12)}
+    .chat-input-row input{flex:1;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid rgba(160,185,255,.22);background:rgba(7,11,24,.75);color:#f5f7ff;outline:none;font:inherit}
+    .chat-input-row input::placeholder{color:#8795b5}
+    .chat-input-row input:focus{border-color:rgba(128,167,255,.55)}
+    .chat-input-row button{padding:0 14px;border:0;border-radius:10px;background:#6d87ff;color:#fff;font-weight:600;cursor:pointer}
+    .chat-input-row button:disabled{opacity:.55;cursor:not-allowed}
+  </style>
+</head>
+<body>
+<div id="app">
+  <video id="video" class="avatar" autoplay muted playsinline></video>
+  <canvas id="person" class="avatar"></canvas>
+  <div class="brand">小信 <span>· DIGITAL HUMAN</span> <a href="/workbench">工作台</a></div>
+  <div class="chat" id="chat">
+    <button type="button" class="chat-toggle" id="chatToggle" aria-label="打开对话" title="对话">
+      <svg viewBox="0 0 24 24"><path d="M21 12a8.5 8.5 0 0 1-8.5 8.5H5l-2 2V12A8.5 8.5 0 1 1 21 12Z"/><path d="M8 11h8M8 15h5"/></svg>
+    </button>
+    <div class="chat-panel" id="chatPanel">
+      <div class="chat-log" id="chatLog"><div class="empty">输入内容后按回车对话</div></div>
+      <div class="chat-input-row">
+        <input id="chatInput" type="text" placeholder="说点什么… 回车发送" autocomplete="off">
+        <button type="button" id="chatSend">发送</button>
+      </div>
+    </div>
+  </div>
+  <div id="status" class="status">正在连接数字人…</div>
+  <div class="hint" id="hint">直接说话即可，说话会打断当前回答</div>
+</div>
+<script>
+const video=document.querySelector('#video'),person=document.querySelector('#person'),statusEl=document.querySelector('#status');
+const personCtx=person.getContext('2d',{willReadFrequently:true});
+let matted=false,keying=false;
+function showRaw(){
+  matted=false;
+  video.classList.remove('src-only');
+  person.style.display='none';
+}
+function startMatting(){
+  if(keying)return;
+  keying=true;
+  requestAnimationFrame(drawPerson);
+}
+function drawPerson(){
+  requestAnimationFrame(drawPerson);
+  if(video.readyState<2||!video.videoWidth)return;
+  if(person.width!==video.videoWidth||person.height!==video.videoHeight){
+    person.width=video.videoWidth;
+    person.height=video.videoHeight;
+  }
+  personCtx.drawImage(video,0,0,person.width,person.height);
+  const frame=personCtx.getImageData(0,0,person.width,person.height);
+  const d=frame.data;
+  let keyed=0;
+  for(let i=0;i<d.length;i+=4){
+    const r=d[i],g=d[i+1],b=d[i+2];
+    const score=Math.min(r,b)-g;
+    if(score>70&&r>150&&b>150){
+      d[i+3]=0;
+      keyed++;
+    }else if(score>28&&r>110&&b>110){
+      const t=Math.min(1,(score-28)/70);
+      d[i+3]=Math.round(255*(1-t));
+      keyed++;
+    }
+  }
+  if(keyed<d.length/4*0.25){
+    if(!matted)showRaw();
+    return;
+  }
+  personCtx.putImageData(frame,0,0);
+  if(!matted){matted=true;person.style.display='block';video.classList.add('src-only')}
+}
+const chatLog=document.querySelector('#chatLog'),chatInput=document.querySelector('#chatInput'),chatSend=document.querySelector('#chatSend');
+let pc=null,sessionid=null,history=[],audioEl=new Audio(),rec=null;
+audioEl.autoplay=true;
+audioEl.playsInline=true;
+audioEl.volume=1;
+audioEl.muted=false;
+async function playAudio(){
+  audioEl.muted=false;
+  audioEl.volume=1;
+  if(audioEl.paused){
+    try{await audioEl.play()}catch(e){
+      console.warn('audio play blocked',e);
+      status('请点击页面开启声音');
+    }
+  }
+}
+function brainIds(){
+  let user=sessionStorage.getItem('dshUser');
+  if(!user){user='xiaoxin-'+Math.random().toString(36).slice(2,10);sessionStorage.setItem('dshUser',user)}
+  let conv=sessionStorage.getItem('dshConv');
+  if(!conv){conv='conv-'+Date.now().toString(36);sessionStorage.setItem('dshConv',conv)}
+  return {channelUserId:user,conversationId:conv};
+}
+function rotateConv(){sessionStorage.removeItem('dshConv')}
+let turn=0,chatAbort=null,speakTail=Promise.resolve(),recentSpoken='';
+const THINK='我想一想。';
+function forSpeech(text){
+  return String(text||'')
+    .replace(/```[\s\S]*?```/g,'')
+    .replace(/`([^`]*)`/g,'$1')
+    .replace(/!\[[^\]]*]\([^)]*\)/g,'')
+    .replace(/\[([^\]]+)]\([^)]*\)/g,'$1')
+    .replace(/^#{1,6}\s*/gm,'')
+    .replace(/[*_~|>]/g,'')
+    .replace(/^\s*[-+]\s+/gm,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+audioEl.autoplay=true;
+function status(t){statusEl.textContent=t}
+function appendLog(role,text){
+  const empty=chatLog.querySelector('.empty');
+  if(empty)empty.remove();
+  const p=document.createElement('p');
+  p.className=role==='user'?'u':'a';
+  p.textContent=(role==='user'?'你：':'小信：')+text;
+  chatLog.appendChild(p);
+  chatLog.scrollTop=chatLog.scrollHeight;
+}
+let connecting=false,pcGen=0,connectedOnce=false,reconnectTimer=null,linkLost=false,broadcasting=0;
+function linkUp(){
+  const state=pc&&pc.connectionState;
+  return !!(pc&&sessionid&&(state==='connected'||state==='connecting'||state==='disconnected'));
+}
+async function connect(force){
+  const live=pc&&pc.connectionState;
+  if(broadcasting>0&&live&&live!=='failed'&&live!=='closed')return;
+  if(connecting){
+    while(connecting)await new Promise(res=>setTimeout(res,40));
+    if(sessionid&&pc&&(pc.connectionState==='connected'||pc.connectionState==='connecting'))return;
+  }
+  const state=pc&&pc.connectionState;
+  if(broadcasting>0&&pc&&state!=='failed'&&state!=='closed')return;
+  if(sessionid&&(state==='connected'||state==='connecting'))return;
+  if(!force&&sessionid&&state==='disconnected')return;
+  connecting=true;
+  clearTimeout(reconnectTimer);
+  if(!matted)showRaw();
+  const gen=++pcGen;
+  try{
+  try{if(pc&&state!=='closed')pc.close()}catch(_){}
+  const cfg=await fetch('/api/avatar-config').then(r=>r.json()).catch(()=>({}));
+  if(cfg.background_url)document.querySelector('#app').style.backgroundImage=`url('${cfg.background_url}')`;
+  const iceServers=(cfg.ice_servers&&cfg.ice_servers.length)?cfg.ice_servers:[{urls:'stun:stun.l.google.com:19302'}];
+  if(!(cfg.ice_servers&&cfg.ice_servers.length))status('没有 TURN，直连很快会断');
+  pc=new RTCPeerConnection({iceServers,iceTransportPolicy:cfg.ice_transport_policy||'all'});
+  pc.addTransceiver('video',{direction:'recvonly'});
+  pc.addTransceiver('audio',{direction:'recvonly'});
+  pc.onconnectionstatechange=()=>{
+    const state=pc.connectionState;
+    if(gen!==pcGen)return;
+    if(state==='connecting'){clearTimeout(reconnectTimer);return}
+    if(state==='connected'){
+      clearTimeout(reconnectTimer);
+      const persona=cfg.persona?cfg.persona+' · ':'';
+      status(persona+'已连接 · 可以直接说话');
+      return;
+    }
+    if(state!=='failed'&&state!=='closed'&&state!=='disconnected')return;
+    clearTimeout(reconnectTimer);
+    if(state==='disconnected'){
+      const mark=video.currentTime;
+      reconnectTimer=setTimeout(()=>{
+        if(gen!==pcGen)return;
+        const now=pc&&pc.connectionState;
+        if(now==='connected'||now==='connecting'||connecting)return;
+        if(video.currentTime!==mark&&video.readyState>=2)return;
+        status('连接中断，正在重连…');
+        connect(true).catch(()=>status('数字人连接失败'));
+      },20000);
+      return;
+    }
+    reconnectTimer=setTimeout(()=>{
+      if(gen!==pcGen)return;
+      const now=pc&&pc.connectionState;
+      if(now==='connected'||now==='connecting'||connecting)return;
+      status('连接中断，正在重连…');
+      connect(true).catch(()=>status('数字人连接失败'));
+    },1500);
+  };
+  pc.ontrack=e=>{
+    const stream=e.streams[0]||new MediaStream([e.track]);
+    if(e.track.kind==='video'){
+      video.srcObject=stream;
+      const played=video.play();
+      if(played&&played.then)played.then(startMatting).catch(startMatting);
+      else startMatting();
+      if(stream.getAudioTracks().length){
+        audioEl.muted=false;
+        audioEl.volume=1;
+        audioEl.srcObject=stream;
+        audioEl.onloadedmetadata=()=>playAudio();
+        playAudio();
+      }
+    }else{
+      audioEl.muted=false;
+      audioEl.volume=1;
+      audioEl.srcObject=stream;
+      audioEl.onloadedmetadata=()=>playAudio();
+      playAudio();
+    }
+  };
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise(r=>{if(pc.iceGatheringState==='complete')r();else pc.onicegatheringstatechange=()=>pc.iceGatheringState==='complete'&&r()});
+  const r=await fetch('/api/offer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:pc.localDescription.sdp,type:pc.localDescription.type,avatar:cfg.avatar_id||'wav2lip256_avatar1',refaudio:'zh-CN-YunxiaNeural'})});
+  const a=await r.json();
+  if(!r.ok||!a.sdp)throw new Error(a.detail||'LiveTalking offer failed');
+  sessionid=a.sessionid;
+  await pc.setRemoteDescription({type:'answer',sdp:a.sdp});
+  connectedOnce=true;
+  status('正在接通视频…');
+  startListen();
+  }catch(e){
+    connecting=false;
+    throw e;
+  }
+  connecting=false;
+}
+function norm(text){return String(text||'').replace(/[\s，。！？、；;：:“”"'「」—\-]/g,'').toLowerCase()}
+function rememberSpoken(text){
+  const n=norm(text);
+  if(n)recentSpoken=(recentSpoken+' '+n).slice(-4000);
+}
+let echoGuardUntil=0;
+function lcsSubLen(a,b){
+  // 最长公共子串长度: 识别结果与播报原文差几个字(同音/误识)时仍能判回声
+  let best=0;const dp=new Array(b.length+1).fill(0);
+  for(let i=1;i<=a.length;i++){let prev=0;for(let j=1;j<=b.length;j++){const t=dp[j];if(a[i-1]===b[j-1]){dp[j]=prev+1;if(dp[j]>best)best=dp[j]}else dp[j]=0;prev=t}}
+  return best;
+}
+function isEcho(text){
+  const n=norm(text);
+  if(n.length<2||!recentSpoken)return n.length<2;
+  const flat=recentSpoken.replaceAll(' ','');
+  if(flat.includes(n))return true;
+  // Chrome 可能只识别到播报中的一小段，允许匹配最近播报片段的子串。
+  if(n.length>=4){
+    const words=recentSpoken.split(' ');
+    if(words.some(w=>w.includes(n)||n.includes(w)&&w.length>=4))return true;
+    // 模糊匹配: 公共子串占比够高就算回声; 播后守护窗内门槛更低
+    const ratio=lcsSubLen(n,flat)/n.length;
+    if(ratio>=0.5)return true;
+    if(Date.now()<echoGuardUntil&&ratio>=0.4)return true;
+  }
+  return false;
+}
+let finals='',heard='',hearTimer=null,lastSent='',holdMic=0;
+let answering=false,answeringGen=0,bargeTimer=null,bargeArmAt=0;
+function holdListen(){
+  holdMic++;
+  // 播报开始时取消尚未提交的语音识别结果，避免把自己的声音送入下一轮对话。
+  clearTimeout(hearTimer);
+  hearTimer=null;
+  heard='';
+  finals='';
+  const cur=rec;
+  rec=null;
+  try{cur&&cur.stop()}catch(_){}
+}
+function pauseListenForAnswer(){
+  clearTimeout(hearTimer);
+  hearTimer=null;
+  heard='';
+  finals='';
+  const cur=rec;
+  rec=null;
+  try{cur&&cur.stop()}catch(_){}
+}
+function releaseListen(){
+  holdMic=Math.max(0,holdMic-1);
+  if(holdMic!==0)return;
+  echoGuardUntil=Date.now()+4000;
+  startListen();
+  if(!linkLost)return;
+  linkLost=false;
+  if(pc&&(pc.connectionState==='connected'||pc.connectionState==='connecting'))return;
+  connect(true).catch(()=>status('数字人连接失败'));
+}
+async function waitQuiet(){
+  const start=Date.now();
+  let heard=false;
+  while(Date.now()-start<25000){
+    const r=await fetch('/api/is_speaking',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionid})}).catch(()=>null);
+    const body=r?await r.json().catch(()=>({})):{};
+    if(body.speaking)heard=true;
+    else if(heard){
+      await new Promise(res=>setTimeout(res,1200));
+      return true;
+    }else if(Date.now()-start>6000){
+      return false;
+    }
+    await new Promise(res=>setTimeout(res,300));
+  }
+  return heard;
+}
+function queueHeard(text){
+  text=String(text||'').replace(/\s/g,'').trim();
+  if(!text)return;
+  if(answering){maybeBarge(text);return}
+  if(holdMic>0)return;
+  heard=text;
+  status('听到：'+text);
+  clearTimeout(hearTimer);
+  hearTimer=setTimeout(()=>{
+    if(holdMic>0||answering){heard='';finals='';return}
+    const say=heard;
+    heard='';
+    finals='';
+    clearTimeout(hearTimer);
+    if(!say||say===lastSent||isEcho(say)){
+      heard='';
+      status('请说话，可随时打断');
+      return;
+    }
+    lastSent=say;
+    send(say).catch(e=>{
+      if(e&&e.name==='AbortError')return;
+      status((e&&e.message)||'回答请求失败，请重试');
+    });
+    try{rec&&rec.stop()}catch(_){}
+  },450);
+}
+function maybeBarge(text){
+  // 回答中保持监听: 非回声的人声持续 400ms → 真打断当前回答, 并把这句话当新问题
+  if(Date.now()<bargeArmAt)return;
+  if(isEcho(text)){clearTimeout(bargeTimer);bargeTimer=null;return}
+  if(norm(text).length<2)return;
+  status('听到你说话…');
+  clearTimeout(bargeTimer);
+  bargeTimer=setTimeout(()=>{
+    bargeTimer=null;
+    if(!answering)return;
+    if(isEcho(text))return;
+    const said=text;
+    doInterrupt();
+    finals='';heard='';clearTimeout(hearTimer);hearTimer=null;
+    lastSent=said;
+    send(said).catch(e=>{
+      if(e&&e.name==='AbortError')return;
+      status((e&&e.message)||'回答请求失败，请重试');
+    });
+    try{rec&&rec.stop()}catch(_){}
+  },400);
+}
+function doInterrupt(){
+  answeringGen++;
+  answering=false;
+  bargeArmAt=Date.now()+900;
+  turn++;
+  if(chatAbort)chatAbort.abort();
+  speakGen++;
+  clearTimeout(bargeTimer);bargeTimer=null;
+  if(sessionid){
+    fetch('/api/human',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'',sessionid,interrupt:true})}).catch(()=>{});
+  }
+  status('已打断');
+}
+function startListen(){
+  if(holdMic>0||answering)return;
+  const S=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!S){status('请用 Chrome 打开');return}
+  if(rec)return;
+  const s=new S();
+  rec=s;
+  s.lang='zh-CN';
+  s.continuous=true;
+  s.interimResults=true;
+  s.onresult=e=>{
+    if(holdMic>0||answering){heard='';finals='';return}
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const piece=e.results[i][0].transcript||'';
+      if(e.results[i].isFinal)finals+=piece;
+      else interim+=piece;
+    }
+    queueHeard(finals+interim);
+  };
+  s.onerror=e=>{
+    if(e.error==='not-allowed'||e.error==='audio-capture'){
+      rec=null;
+      status('请点一下页面，并允许麦克风');
+    }else if(e.error==='network'){
+      status('语音识别连不上，请检查 Chrome 的网络');
+    }
+  };
+  s.onend=()=>{
+    if(holdMic>0||answering){if(rec===s)rec=null;return}
+    if(heard)queueHeard(heard);
+    if(rec!==s)return;
+    setTimeout(()=>{if(rec===s&&holdMic===0&&!answering){try{s.start()}catch(_){rec=null;status('请点一下页面，并允许麦克风')}}},250);
+  };
+  try{s.start();status('请说话，可随时打断')}catch(_){rec=null;status('请点一下页面，并允许麦克风')}
+}
+let speakGen=0;
+function speak(text,interrupt,retried=false,waitDone=true,manageListen=true){
+  const gen=speakGen;
+  const job=speakTail.then(()=>gen!==speakGen?undefined:speakNow(text,interrupt,retried,waitDone,manageListen));
+  speakTail=job.catch(()=>{});
+  return job;
+}
+async function speakNow(text,interrupt,retried,waitDone=true,manageListen=true){
+  if(!String(text||'').trim())return;
+  if(manageListen&&!retried)holdListen();
+  try{
+  if(!sessionid||!pc||['failed','closed'].includes(pc.connectionState))await connect(true);
+  audioEl.muted=false;
+  audioEl.volume=1;
+  await playAudio();
+  const r=await fetch('/api/human',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,sessionid,interrupt:!!interrupt})});
+  const body=await r.json().catch(()=>({}));
+  const missing=!r.ok||body.code;
+  if(missing&&!retried&&/session not found|未连接|offer failed/i.test(String(body.msg||body.detail||''))){
+    sessionid=null;
+    await connect(true);
+    return await speakNow(text,interrupt,true,waitDone,manageListen);
+  }
+  if(missing)throw new Error(body.msg||body.detail||'播报失败');
+  rememberSpoken(text);
+  if(waitDone)await waitQuiet();
+  }finally{
+    echoGuardUntil=Math.max(echoGuardUntil,Date.now()+2500);
+    if(manageListen&&!retried)releaseListen();
+  }
+}
+let micReady=false;
+document.addEventListener('pointerdown',()=>{
+  playAudio();
+  if(micReady){if(!rec)startListen();return}
+  const ask=navigator.mediaDevices&&navigator.mediaDevices.getUserMedia;
+  if(!ask){micReady=true;startListen();return}
+  ask.call(navigator.mediaDevices,{audio:true}).then(stream=>{
+    stream.getTracks().forEach(track=>track.stop());
+    micReady=true;
+    if(rec){try{rec.onend=null;rec.stop()}catch(_){} rec=null}
+    startListen();
+  }).catch(()=>status('请允许麦克风'));
+});
+let pending=null;
+function commitPending(){
+  if(!pending||!pending.reply)return;
+  history.push({role:'user',content:pending.text},{role:'assistant',content:pending.reply});
+  if(history.length>20)history=history.slice(-20);
+  pending=null;
+}
+async function send(text){
+  text=(text||'').trim();
+  if(!text)return;
+  if(!sessionid||!pc||['failed','closed'].includes(pc.connectionState)){
+    try{await connect(true)}catch(e){status('数字人还没连上');return}
+  }
+  if(!sessionid){status('数字人还没连上');return}
+  // 回答期间暂停浏览器语音识别，避免把扬声器输出再次识别成用户输入。
+  const myAnswerGen=++answeringGen;
+  answering=true;
+  bargeArmAt=Date.now()+900;
+  clearTimeout(hearTimer);
+  hearTimer=null;
+  heard='';
+  finals='';
+  pauseListenForAnswer();
+  broadcasting++;
+  audioEl.muted=false;
+  audioEl.volume=1;
+  playAudio();
+  commitPending();
+  const my=++turn;
+  if(chatAbort)chatAbort.abort();
+  const ac=new AbortController();
+  chatAbort=ac;
+    const requestTimer=setTimeout(()=>ac.abort(),150000);
+  const slot={text,reply:''};
+  pending=slot;
+  appendLog('user',text);
+  appendLog('bot',THINK);
+  status('正在思考…');
+  const replyEl=document.createElement('p');
+  replyEl.className='a';
+  replyEl.textContent='小信：';
+  chatLog.appendChild(replyEl);
+  let reply='';
+  try{
+    const brain=brainIds();
+    const r=await fetch('/api/chat_stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,history,sessionid,channelUserId:brain.channelUserId,conversationId:brain.conversationId}),signal:ac.signal});
+    if(!r.ok)throw new Error('chat failed');
+    const echoed=r.headers.get('X-Echo')==='1';
+    const reader=r.body.getReader(),decoder=new TextDecoder();
+    let buf='',spoken='',echoState=echoed?'pending':'client';
+    const take=d=>{
+      if(d.error)throw new Error(d.error);
+      if(d.echo)echoState=d.echo;
+      if(!d.delta)return;
+      reply+=d.delta;
+      slot.reply=reply;
+      replyEl.textContent='小信：'+forSpeech(reply);
+      chatLog.scrollTop=chatLog.scrollHeight;
+    };
+    while(my===turn){
+      const x=await reader.read();
+      if(x.done){
+        buf+=decoder.decode();
+        if(buf.trim())take(JSON.parse(buf));
+        break;
+      }
+      if(my!==turn)break;
+      buf+=decoder.decode(x.value,{stream:true});
+      const lines=buf.split('\n');
+      buf=lines.pop();
+      for(const line of lines){
+        if(!line||my!==turn)continue;
+        const d=JSON.parse(line);
+        take(d);
+        if(echoed||!d.delta)continue;
+        {
+          // 以完整句为主；逗号只在片段达到 30 字后切，避免语音过碎。
+          let rest=reply.slice(spoken.length),acc='',flush=null;
+          while(rest){const m=rest.match(/^[\s\S]*?[。！？!?；;，、,]/);if(!m)break;const seg=m[0];acc+=seg;rest=rest.slice(seg.length);if(/[。！？!?；;]$/.test(seg)||forSpeech(acc).length>=30){flush=acc;break}}
+          if(!flush&&reply.slice(spoken.length).length>=60)flush=reply.slice(spoken.length).slice(0,60);
+          if(flush){const s=flush.length>60?flush.slice(0,60):flush;spoken+=s;const say=forSpeech(s);if(say){status('正在播报…');speak(say,false,false,false,false)}}
+        }
+        }
+      }
+    if(my!==turn)return;
+    const tail=forSpeech(reply.slice(spoken.length));
+    if(tail){
+      status('正在播报…');
+      await speak(tail,false,false,true,false);
+    }else{
+      await speakTail;
+      await waitQuiet();
+    }
+    if(my!==turn)return;
+    if(!reply)replyEl.textContent='小信：（空回复）';
+    else{history.push({role:'user',content:text},{role:'assistant',content:reply});pending=null}
+    status('请说话，可随时打断');
+  }catch(e){
+    if(my!==turn)return;
+    if(e.name==='AbortError'){
+      pending=null;
+      rotateConv();
+      status('回答超时，已切换新会话，请重说一遍');
+      return;
+    }
+    if(!reply){replyEl.textContent='小信：'+(e.message||'服务暂时不可用');rotateConv()}
+    status(e.message||'服务暂时不可用');
+    pending=null;
+  }finally{
+    clearTimeout(requestTimer);
+    broadcasting=Math.max(0,broadcasting-1);
+    if(answeringGen===myAnswerGen){
+      answering=false;
+      echoGuardUntil=Date.now()+4000;
+      if(!rec)startListen();
+      if(linkLost){
+        linkLost=false;
+        if(!(pc&&(pc.connectionState==='connected'||pc.connectionState==='connecting')))connect(true).catch(()=>status('数字人连接失败'));
+      }
+    }
+  }
+}
+function submitChat(){
+  const text=chatInput.value.trim();
+  if(!text)return;
+  playAudio();
+  chatInput.value='';
+  send(text).catch(e=>status((e&&e.message)||'回答请求失败，请重试'));
+}
+chatSend.addEventListener('click',submitChat);
+chatInput.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.isComposing){e.preventDefault();submitChat()}
+});
+document.querySelector('#chatToggle').addEventListener('click',()=>chatInput.focus());
+connect().catch(e=>status('数字人连接失败'));
+</script>
+</body></html>

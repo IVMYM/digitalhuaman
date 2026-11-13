@@ -1,0 +1,32 @@
+services:
+  admin:
+    build: .
+    image: dh-admin:local
+    container_name: dh-admin
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /data
+      STATIC_DIR: /app/static
+    ports:
+      - "127.0.0.1:${APP_PORT:-18200}:8000"
+    volumes:
+      - ${DATA_MOUNT:-./data}:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    mem_limit: ${MEM_LIMIT:-512m}
+    memswap_limit: ${MEMSWAP_LIMIT:-768m}
+    cpus: ${CPU_LIMIT:-1.0}
+    init: true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
